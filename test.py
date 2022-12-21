@@ -6,6 +6,16 @@ import onnxruntime
 print(f'{onnx.__version__ = }')
 print(f'{onnxruntime.__version__ = }')
 
+test_code = """
+print(table.concat(xs, \" \"))
+x = 0
+for _, v in ipairs(xs) do 
+    x == v
+end
+print(x)
+return x
+"""
+
 model = onnx.helper.make_model(
     onnx.helper.make_graph([
         onnx.helper.make_node(
@@ -17,7 +27,8 @@ model = onnx.helper.make_model(
             ['z'],
             ['r'],
             name='luanode',
-            domain='lang.lua'
+            domain='lang.lua',
+            code=test_code
         )],
         'graph', [
             onnx.helper.make_tensor_value_info('x', onnx.TensorProto.DOUBLE, ('N')),
@@ -33,7 +44,7 @@ model = onnx.helper.make_model(
 )
 
 options = onnxruntime.SessionOptions()
-options.register_custom_ops_library('build/libluaop.dylib')
+options.register_custom_ops_library('build/liblangops.dylib')
 session = onnxruntime.InferenceSession(model.SerializeToString(), options)
 
 print(session.run(None, {

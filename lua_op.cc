@@ -1,28 +1,42 @@
-  #include <vector>
-#include <cstdint>
+#include <type_traits>
+
 #include <onnxruntime_cxx_api.h>
 #include <lua.hpp>
 #include "lua_op.h"
 
-
 void LuaKernel::Compute(OrtKernelContext* context) {
-  const OrtValue* input_X = ort_.KernelContext_GetInput(context, 0);
-  const double* X_data = reinterpret_cast<const double*>(ort_.GetTensorData<double>(input_X));
+  static_assert(std::is_same<double, lua_Number>::value, "Assumes that lua_Number is a double-precision float.");
+
+  const OrtValue* X_value = ort_.KernelContext_GetInput(context, 0);
+  OrtTensorTypeAndShapeInfo* X_info = ort_.GetTensorTypeAndShape(X_value);
+  auto X_shape = ort_.GetTensorShape(X_info);
+  ort_.ReleaseTensorTypeAndShapeInfo(X_info);
+  const double* X_data = reinterpret_cast<const double*>(ort_.GetTensorData<double>(X_value));
+  
+  size_t X_size = 1;
+  for(auto x : X_shape)
+    X_size *= x;
 
   auto lua_state = luaL_newstate();
   luaL_openlibs(lua_state);
 
-  lua_setglobal(lua_state, "inputs");
-  luaL_dostring(lua_state, "function");
-  lua_close(lua_state);
+  lua_createtable(lua_state, X_size, 0);
+  for(size_t i = 0; i < X_size; i++) {
+    lua_pushnumber(lua_state, i + 1);
+    lua_pushnumber(lua_state, X_data[i]);
+    lua_settable(lua_state, -3);
+  }
 
-  std::vector<int64_t> shape;
-  OrtValue* output = ort_.KernelContext_GetOutput(context, 0, shape.data(), shape.size());
-  double* out = ort_.GetTensorMutableData<double>(output);
+  lua_setglobal(lua_state, "xs");
 
+  if(luaL_dostring(lua_state, code_.data())) {
+    std::string message(lua_tostring(lua_state, -1));
+    throw std::runtime_error(message);
+  }
+  auto result = lua_tonumber(lua_state, -1);
 
-
-  OrtTensorTypeAndShapeInfo* output_info = ort_.GetTensorTypeAndShape(output);
-  ort_.ReleaseTensorTypeAndShapeInfo(output_info);
-
+  std::vector<int64_t> out_shape;
+  OrtValue* out_value = ort_.KernelContext_GetOutput(context, 0, out_shape.data(), out_shape.size());
+  double* out = ort_.GetTensorMutableData<double>(out_value);
+  *out = result;
 }
