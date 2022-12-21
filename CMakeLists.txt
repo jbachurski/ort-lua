@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project (luaop)
+project (langops)
 add_definitions(-std=c++17)
 
 # Download a Lua release
@@ -39,5 +39,5 @@ link_directories(${ONNXRUNTIME_DIR}/lib/)
 find_library(LUA_LIBRARY lua HINTS ${LUA_DIR}/install/lib/)
 find_library(ONNXRUNTIME_LIBRARY onnxruntime HINTS ${ONNXRUNTIME_DIR}/lib/)
 
-add_library(luaop SHARED custom_op.cc custom_op.h)
-target_link_libraries(luaop PUBLIC ${ONNXRUNTIME_LIBRARY} ${LUA_LIBRARY})
+add_library(langops SHARED lang_ops.cc lua_op.cc lua_op.h)
+target_link_libraries(langops PUBLIC ${ONNXRUNTIME_LIBRARY} ${LUA_LIBRARY})
