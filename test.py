@@ -7,13 +7,14 @@ print(f'{onnx.__version__ = }')
 print(f'{onnxruntime.__version__ = }')
 
 test_code = """
-print(table.concat(xs, \" \"))
-x = 0
-for _, v in ipairs(xs) do 
-    x == v
+function run(xs)
+    local x = 0
+    for _, v in ipairs(xs) do 
+        x = x + v
+    end
+    return x
 end
-print(x)
-return x
+return run
 """
 
 model = onnx.helper.make_model(

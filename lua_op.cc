@@ -20,6 +20,17 @@ void LuaKernel::Compute(OrtKernelContext* context) {
   auto lua_state = luaL_newstate();
   luaL_openlibs(lua_state);
 
+  if(luaL_dostring(lua_state, code_.data()) != LUA_OK) {
+    std::string message(lua_tostring(lua_state, -1));
+    throw std::runtime_error(message);
+  }
+  if(!lua_gettop(lua_state)) {
+    throw std::runtime_error("Lua code must return a function, but nothing was returned.");
+  }
+  if(!lua_isfunction(lua_state, -1)) {
+    throw std::runtime_error("Lua code must return a function to be called with operator inputs, but a different type was found.");
+  }
+
   lua_createtable(lua_state, X_size, 0);
   for(size_t i = 0; i < X_size; i++) {
     lua_pushnumber(lua_state, i + 1);
@@ -27,12 +38,11 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     lua_settable(lua_state, -3);
   }
 
-  lua_setglobal(lua_state, "xs");
-
-  if(luaL_dostring(lua_state, code_.data())) {
+  if(lua_pcall(lua_state, 1, 1, 0) != LUA_OK) {
     std::string message(lua_tostring(lua_state, -1));
     throw std::runtime_error(message);
   }
+
   auto result = lua_tonumber(lua_state, -1);
 
   std::vector<int64_t> out_shape;
