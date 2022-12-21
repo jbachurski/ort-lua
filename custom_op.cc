@@ -1,27 +1,70 @@
+#include <iostream>
+#include <vector>
+#include <cstdint>
+#include <mutex>
+#include <memory>
 #include <onnxruntime_cxx_api.h>
+#include <lua.hpp>
 #include "custom_op.h"
 
-template <typename T>
-void GroupNormKernel<T>::Compute(OrtKernelContext* context) {
-  // Setup inputs
+
+void LuaKernel::Compute(OrtKernelContext* context) {
   const OrtValue* input_X = ort_.KernelContext_GetInput(context, 0);
-  const T* X_data = reinterpret_cast<const T*>(ort_.GetTensorData<T>(input_X));
-  const OrtValue* input_num_groups = ort_.KernelContext_GetInput(context, 1);
-  const T* num_groups = reinterpret_cast<const T*>(ort_.GetTensorData<const T*>(input_num_groups));
-  const OrtValue* input_scale = ort_.KernelContext_GetInput(context, 2);
-  const T* scale_data = reinterpret_cast<const T*>(ort_.GetTensorData<T>(input_scale));
-  const OrtValue* input_B = ort_.KernelContext_GetInput(context, 3);
-  const T* B_data = reinterpret_cast<const T*>(ort_.GetTensorData<T>(input_B));
+  const double* X_data = reinterpret_cast<const double*>(ort_.GetTensorData<double>(input_X));
 
   // Setup output
-  OrtTensorDimensions dimensions(ort_, input_X);
-  OrtValue* output = ort_.KernelContext_GetOutput(context, 0, dimensions.data(), dimensions.size());
-  float* out = ort_.GetTensorMutableData<float>(output);
-  const int64_t N = dimensions[0];
-  const int64_t C = dimensions[1] / num_groups[0];  // assume [N C*num_groups H W]  per the spec
+  std::vector<int64_t> shape;
+  OrtValue* output = ort_.KernelContext_GetOutput(context, 0, shape.data(), shape.size());
+  double* out = ort_.GetTensorMutableData<double>(output);
+  *out = 0;
 
   OrtTensorTypeAndShapeInfo* output_info = ort_.GetTensorTypeAndShape(output);
   ort_.ReleaseTensorTypeAndShapeInfo(output_info);
 
 
 }
+
+struct OrtCustomOpDomainDeleter {
+  explicit OrtCustomOpDomainDeleter(const OrtApi* ort_api) {
+    ort_api_ = ort_api;
+  }
+  void operator()(OrtCustomOpDomain* domain) const {
+    ort_api_->ReleaseCustomOpDomain(domain);
+  }
+
+  const OrtApi* ort_api_;
+};
+
+using OrtCustomOpDomainUniquePtr = std::unique_ptr<OrtCustomOpDomain, OrtCustomOpDomainDeleter>;
+static std::vector<OrtCustomOpDomainUniquePtr> ort_custom_op_domain_container;
+static std::mutex ort_custom_op_domain_mutex;
+
+static void AddOrtCustomOpDomainToContainer(OrtCustomOpDomain* domain, const OrtApi* ort_api) {
+  std::lock_guard<std::mutex> lock(ort_custom_op_domain_mutex);
+  auto ptr = std::unique_ptr<OrtCustomOpDomain, OrtCustomOpDomainDeleter>(domain, OrtCustomOpDomainDeleter(ort_api));
+  ort_custom_op_domain_container.push_back(std::move(ptr));
+}
+
+static const char* c_OpDomain = "lang.lua";
+static const LuaOp c_LuaOp;
+
+extern "C" OrtStatus* ORT_API_CALL RegisterCustomOps(OrtSessionOptions* options, const OrtApiBase* api) { 
+  OrtCustomOpDomain* domain = nullptr; 
+  const OrtApi* ortApi = api->GetApi(ORT_API_VERSION); 
+
+  if (auto status = ortApi->CreateCustomOpDomain(c_OpDomain, &domain)) { 
+    return status; 
+  } 
+
+  AddOrtCustomOpDomainToContainer(domain, ortApi);
+
+  if (auto status = ortApi->CustomOpDomain_Add(domain, &c_LuaOp)) { 
+    return status; 
+  }
+
+  if (auto status = ortApi->AddCustomOpDomain(options, domain)) {
+    return status;
+  }
+
+  return nullptr;
+} 
