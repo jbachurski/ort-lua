@@ -1,0 +1,12 @@
+name: ort-lua
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python>=3.8
+  - numpy
+  - onnxruntime>=1.13.1
+  - pip
+  - pytest>=6
+  - cxx-compiler
+  - lua
