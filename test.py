@@ -9,7 +9,7 @@ print(f'{onnxruntime.__version__ = }')
 test_code = """
 function run(xs)
     local x = 0
-    for _, v in ipairs(xs) do 
+    for _, v in ipairs(xs) do
         x = x + v
     end
     return x
@@ -45,7 +45,7 @@ model = onnx.helper.make_model(
 )
 
 options = onnxruntime.SessionOptions()
-options.register_custom_ops_library('build/liblangops.dylib')
+options.register_custom_ops_library('build/liblangops.so')
 session = onnxruntime.InferenceSession(model.SerializeToString(), options)
 
 print(session.run(None, {
