@@ -1,11 +1,5 @@
-#include <iostream>
-#include "Eigen/Dense"
-#include "onnxruntime_cxx_api.h"
-
-template <typename T>
-using ConstEigenVectorArrayMap = Eigen::Map<const Eigen::Array<T, Eigen::Dynamic, 1>>;
-template <typename T>
-using EigenVectorArrayMap = Eigen::Map<Eigen::Array<T, Eigen::Dynamic, 1>>;
+#include <onnxruntime_cxx_api.h>
+#include "custom_op.h"
 
 template <typename T>
 void GroupNormKernel<T>::Compute(OrtKernelContext* context) {
@@ -29,21 +23,5 @@ void GroupNormKernel<T>::Compute(OrtKernelContext* context) {
   OrtTensorTypeAndShapeInfo* output_info = ort_.GetTensorTypeAndShape(output);
   ort_.ReleaseTensorTypeAndShapeInfo(output_info);
 
-  // Do computation
-	int64_t sample_size = 1;
-  for (size_t i = 2; i < dimensions.size(); ++i) {
-    sample_size *= dimensions[i];
-  }
-  sample_size *= C;
 
-  for (auto i = 0; i < N * num_groups[0]; ++i) {
-    ConstEigenVectorArrayMap<float> Xi(X_data + sample_size * i, sample_size);
-    const float Xi_mean = Xi.mean();
-    const float squared_norm = (Xi - Xi_mean).matrix().squaredNorm();
-    const float inv_stdev = 1.0f / std::sqrt(squared_norm / sample_size + epsilon_);
-    EigenVectorArrayMap<float> Yi(out + sample_size * i, sample_size);
-    const float channel_scale = inv_stdev * scale_data[i % (C * int(num_groups[0]))];
-    const float channel_shift = B_data[i % (C * int(num_groups[0]))] - Xi_mean * channel_scale;
-    Yi = Xi * channel_scale + channel_shift;
-  }
 }

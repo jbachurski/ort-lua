@@ -2,14 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <iostream>
-#include "onnxruntime_cxx_api.h"
-
-struct Input {
-  const char* name;
-  std::vector<int64_t> dims;
-  std::vector<float> values;
-};
+#include <onnxruntime_cxx_api.h>
 
 struct OrtTensorDimensions : std::vector<int64_t> {
   OrtTensorDimensions(Ort::CustomOpApi ort, const OrtValue* value) {
@@ -35,7 +28,7 @@ struct GroupNormKernel {
 
 
 struct GroupNormCustomOp : Ort::CustomOpBase<GroupNormCustomOp, GroupNormKernel<float>> {
-  void* CreateKernel(Ort::CustomOpApi api, const OrtKernelInfo* info) { return new GroupNormKernel<float>(api, info); };
+  void* CreateKernel(Ort::CustomOpApi api, const OrtKernelInfo* info) const { return new GroupNormKernel<float>(api, info); };
   const char* GetName() const { return "testgroupnorm"; };
 
   size_t GetInputTypeCount() const { return 4; };
