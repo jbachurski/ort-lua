@@ -56,6 +56,9 @@ void LuaKernel::Compute(OrtKernelContext* context) {
   // TODO: More than one output.
   // TODO: Non-scalar output.
   // TODO: Non-number output.
+  if(!lua_isnumber(lua_state, -1)) {
+    throw std::runtime_error("The only currently supported result type is a number, but another type was returned.");
+  }
   auto result = lua_tonumber(lua_state, -1);
 
   // Create ORT output value
