@@ -175,4 +175,6 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     }
   }
   lua_close(L);
+
+  #undef bail
 }
