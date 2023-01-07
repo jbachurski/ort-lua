@@ -22,8 +22,7 @@ struct LuaState
   }
 };
 
-void push_lua_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const double* data)
-{
+void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const double* data) {
     size_t size = 1;
     for(auto d : shape) size *= d;
     lua_createtable(L, 4, 0);
@@ -81,12 +80,59 @@ void push_lua_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const
     lua_settable(L, -3);
 }
 
+#define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
+
+template<typename OutputCallback>
+void pop_tensor_table(LuaState& L, size_t k, OutputCallback GetOutput) {
+    if(lua_pushstring(L, "shape"); lua_gettable(L, -2) != LUA_TTABLE) {
+      bail("The returned tensor-table does not have an (array) table 'shape' field.");
+    }
+    std::vector<int64_t> shape;
+    lua_pushnil(L);
+    while(lua_next(L, -2)) {
+      lua_pushvalue(L, -2);
+      if(lua_tointeger(L, -1) != 1 + shape.size()) {
+        bail("The returned shape is not an array table.");
+      }
+      shape.push_back(lua_tointeger(L, -2));
+      lua_pop(L, 2);
+    }
+    lua_pop(L, 1);
+
+    if(lua_pushstring(L, "get"); lua_gettable(L, -2) != LUA_TFUNCTION) {
+      bail("The returned tensor-table does not have a function 'get' field.");
+    }
+    lua_pop(L, 1);
+
+    size_t length = 1;
+    for(auto dim : shape)
+      length *= dim > 0 ? dim : 0;
+    const size_t rank = shape.size();
+
+    auto out = GetOutput(shape);
+    std::vector<size_t> index(rank);
+    for(size_t i = 0; i < length; i++) {
+      for(size_t d = rank, j = i; d --> 0; ) {
+        index[d] = j % shape[d];
+        j /= shape[d];
+      }
+      lua_pushstring(L, "get");
+      lua_gettable(L, -2);
+      for(size_t d = 0; d < rank; d++)
+        lua_pushinteger(L, index[d]);
+      if(lua_pcall(L, rank, 1, 0) != LUA_OK) {
+        std::string message(lua_tostring(L, -1));
+        bail(message);
+      }
+      out[i] = lua_tonumber(L, -1);
+      lua_pop(L, 1);
+    }
+}
+
 void LuaKernel::Compute(OrtKernelContext* context) {
   static_assert(std::is_same<double, lua_Number>::value, "Assumes that lua_Number is a double-precision float.");
 
-  // Construct Lua state
   LuaState L;
-  #define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
 
   // Define the Lua compute function and check for possible errors or lack of return.
   if(luaL_dostring(L, code_.data()) != LUA_OK) {
@@ -116,7 +162,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     shape = ort_.GetTensorShape(info);
     ort_.ReleaseTensorTypeAndShapeInfo(info);
     const double* data = reinterpret_cast<const double*>(ort_.GetTensorData<double>(value));
-    push_lua_tensor_table(L, shape, data);
+    push_tensor_table(L, shape, data);
   }
 
   // Execute function with arguments on the stack same as in operator input order, check error
@@ -139,55 +185,14 @@ void LuaKernel::Compute(OrtKernelContext* context) {
       bail("The returned value must be a (tensor) table.");
     }
 
-    if(lua_pushstring(L, "shape"); lua_gettable(L, -2) != LUA_TTABLE) {
-      bail("The returned tensor-table does not have an (array) table 'shape' field.");
-    }
-    std::vector<int64_t> shape;
-    lua_pushnil(L);
-    while(lua_next(L, -2)) {
-      lua_pushvalue(L, -2);
-      if(lua_tointeger(L, -1) != 1 + shape.size()) {
-        bail("The returned shape is not an array table.");
+    pop_tensor_table(L, k, [&](const std::vector<int64_t>& shape) {
+      OrtValue* value = ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
+      if(!value) {
+        bail("Output " + std::to_string(k) + " was not nil, but it has no slot and would be implicitly ignored.");
       }
-      shape.push_back(lua_tointeger(L, -2));
-      lua_pop(L, 2);
-    }
-    lua_pop(L, 1);
-
-    if(lua_pushstring(L, "get"); lua_gettable(L, -2) != LUA_TFUNCTION) {
-      bail("The returned tensor-table does not have a function 'get' field.");
-    }
-    lua_pop(L, 1);
-
-    OrtValue* value = ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
-    if(!value) {
-      bail("Output " + std::to_string(k) + " was not nil, but it has no slot and would be implicitly ignored.");
-    }
-    double* out = ort_.GetTensorMutableData<double>(value);
-
-    size_t length = 1;
-    for(auto dim : shape)
-      length *= dim > 0 ? dim : 0;
-    const size_t rank = shape.size();
-
-    std::vector<size_t> index(rank);
-    for(size_t i = 0; i < length; i++) {
-      for(size_t d = rank, j = i; d --> 0; ) {
-        index[d] = j % shape[d];
-        j /= shape[d];
-      }
-      lua_pushstring(L, "get");
-      lua_gettable(L, -2);
-      for(size_t d = 0; d < rank; d++)
-        lua_pushinteger(L, index[d]);
-      if(lua_pcall(L, rank, 1, 0) != LUA_OK) {
-        std::string message(lua_tostring(L, -1));
-        bail(message);
-      }
-      out[i] = lua_tonumber(L, -1);
-      lua_pop(L, 1);
-    }
+      return ort_.GetTensorMutableData<double>(value);
+    });
   }
-
-  #undef bail
 }
+
+#undef bail
