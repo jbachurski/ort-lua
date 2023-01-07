@@ -22,7 +22,8 @@ struct LuaState
   }
 };
 
-void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const double* data) {
+template<typename T>
+void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* data) {
     size_t size = 1;
     for(auto d : shape) size *= d;
     lua_createtable(L, 4, 0);
@@ -45,7 +46,7 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const dou
     lua_pushinteger(L, size);
     lua_pushlightuserdata(L, (void*)&shape);
     lua_pushcclosure(L, [](lua_State *L1) {
-      const double* data = reinterpret_cast<const double*>(lua_touserdata(L1, lua_upvalueindex(1)));
+      const T* data = reinterpret_cast<const T*>(lua_touserdata(L1, lua_upvalueindex(1)));
       size_t size = lua_tonumber(L1, lua_upvalueindex(2));
       std::vector<int64_t>& shape = *reinterpret_cast<std::vector<int64_t>*>(lua_touserdata(L1, lua_upvalueindex(3)));
       if (lua_gettop(L1) != shape.size()) {
@@ -68,12 +69,13 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const dou
     lua_pushlightuserdata(L, (void*)data);
     lua_pushinteger(L, size);
     lua_pushcclosure(L, [](lua_State *L1) {
-      const double* data = reinterpret_cast<const double*>(lua_touserdata(L1, lua_upvalueindex(1)));
+      const T* data = reinterpret_cast<const T*>(lua_touserdata(L1, lua_upvalueindex(1)));
       size_t size = lua_tonumber(L1, lua_upvalueindex(2));
       auto index = luaL_checkinteger(L1, 1);
       if(index >= size) {
         return luaL_error(L1, "Tensor get: index out of bounds.");
       }
+      static_assert(std::is_same<T, double>::value, "TODO: Support pushing tensors of different datatypes than double.");
       lua_pushnumber(L1, data[index]);
       return 1;
     }, 2);
@@ -82,8 +84,8 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const dou
 
 #define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
 
-template<typename OutputCallback>
-void pop_tensor_table(LuaState& L, size_t k, OutputCallback GetOutput) {
+template<typename T, typename OutputCallback>
+void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
     if(lua_pushstring(L, "shape"); lua_gettable(L, -2) != LUA_TTABLE) {
       bail("The returned tensor-table does not have an (array) table 'shape' field.");
     }
@@ -124,6 +126,7 @@ void pop_tensor_table(LuaState& L, size_t k, OutputCallback GetOutput) {
         std::string message(lua_tostring(L, -1));
         bail(message);
       }
+      static_assert(std::is_same<T, double>::value, "TODO: Support popping tensors of different datatypes than double.");
       out[i] = lua_tonumber(L, -1);
       lua_pop(L, 1);
     }
@@ -185,7 +188,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
       bail("The returned value must be a (tensor) table.");
     }
 
-    pop_tensor_table(L, k, [&](const std::vector<int64_t>& shape) {
+    pop_tensor_table<double>(L, [&](const std::vector<int64_t>& shape) {
       OrtValue* value = ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
       if(!value) {
         bail("Output " + std::to_string(k) + " was not nil, but it has no slot and would be implicitly ignored.");
