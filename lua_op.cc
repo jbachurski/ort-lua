@@ -5,13 +5,30 @@
 #include "lua_op.h"
 
 
+struct LuaState
+{
+  lua_State *state;
+
+  LuaState() : state(luaL_newstate()) {
+    luaL_openlibs(state);
+  }
+
+  ~LuaState() {
+    lua_close(state);
+  }
+
+  operator lua_State*() {
+    return state;
+  }
+};
+
+
 void LuaKernel::Compute(OrtKernelContext* context) {
   static_assert(std::is_same<double, lua_Number>::value, "Assumes that lua_Number is a double-precision float.");
 
   // Construct Lua state
-  auto L = luaL_newstate();
-  luaL_openlibs(L);
-  #define bail(__msg) do { lua_close(L); throw std::runtime_error(__msg); } while(0)
+  LuaState L;
+  #define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
 
   // Define the Lua compute function and check for possible errors or lack of return.
   if(luaL_dostring(L, code_.data()) != LUA_OK) {
@@ -173,7 +190,6 @@ void LuaKernel::Compute(OrtKernelContext* context) {
       lua_pop(L, 1);
     }
   }
-  lua_close(L);
 
   #undef bail
 }
