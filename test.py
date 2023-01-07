@@ -15,6 +15,8 @@ function run(xs, ys)
     end
     return {
         shape={1}
+    }, {
+        shape={}
     }
 end
 return run
@@ -34,7 +36,7 @@ model = onnx.helper.make_model(
             onnx.helper.make_tensor_value_info('x', onnx.TensorProto.DOUBLE, ('N')),
             onnx.helper.make_tensor_value_info('y', onnx.TensorProto.DOUBLE, (2, 'N'))
         ], [
-            onnx.helper.make_tensor_value_info('r', onnx.TensorProto.DOUBLE, ()),
+            onnx.helper.make_tensor_value_info('r', onnx.TensorProto.DOUBLE, (1,)),
             onnx.helper.make_tensor_value_info('s', onnx.TensorProto.DOUBLE, ())
         ]
     ),

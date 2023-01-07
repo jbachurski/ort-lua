@@ -121,21 +121,30 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     if(!lua_istable(L, -1)) {
       throw std::runtime_error("The returned value must be a (tensor) table.");
     }
+
     if(lua_pushstring(L, "shape"); lua_gettable(L, -2) != LUA_TTABLE) {
-      throw std::runtime_error("The returned tensor-table is missing the 'shape' field.");
+      throw std::runtime_error("The returned tensor-table does not have an (array) table 'shape' field.");
     }
     std::vector<int64_t> shape;
     lua_pushnil(L);
     while(lua_next(L, -2)) {
-      // lua_tointeger(lua_state, )
-      lua_pop(L, 1);
+      lua_pushvalue(L, -2);
+      if(lua_tointeger(L, -1) != 1 + shape.size()) {
+        throw std::runtime_error("The returned shape is not an array table.");
+      }
+      shape.push_back(lua_tointeger(L, -2));
+      lua_pop(L, 2);
     }
     lua_pop(L, 1);
+
+    if(lua_pushstring(L, "get"); lua_gettable(L, -2) != LUA_TFUNCTION) {
+      throw std::runtime_error("The returned tensor-table does not have a function 'get' field.");
+    }
     OrtValue* value = ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
     if(!value) {
       throw std::runtime_error("Output " + std::to_string(k) + " was not nil, but it has no slot and would be implicitly ignored.");
     }
     double* out = ort_.GetTensorMutableData<double>(value);
-    *out = 0;
+
   }
 }
