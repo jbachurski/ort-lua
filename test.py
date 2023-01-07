@@ -21,8 +21,6 @@ function run(xs, ys)
     }, {
         shape={#zs},
         get=function (i)
-            print(i+1)
-            print(zs[i+1])
             return zs[i+1]
         end
     }
