@@ -133,7 +133,7 @@ void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
         std::string message(lua_tostring(L, -1));
         bail(message);
       }
-      // Stack is now just the resulting element at 'index', take and pop it
+      // Stack is now just the getter and resulting element at 'index', take and pop it
       static_assert(std::is_same<T, double>::value, "TODO: Support popping tensors of different datatypes than double.");
       out[i] = lua_tonumber(L, -1);
       lua_pop(L, 1);

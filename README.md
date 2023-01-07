@@ -24,15 +24,19 @@ return run
 
 Here, the function `run` is defined and returned. At runtime, the inputs of the operator will be passed as parameters to the function in the form special Lua tables. Similarly, results from this function should follow the same table pattern as well. The number of parameters is the same as the number of operator inputs, and likewise for results and operator outputs.
 
-The passed tables implement 'tensors': they should have a `shape` table (an array of integers indexed from `1` to `#shape`) and an element getter function, `get`, which takes `#shape` parameters. The stay closer to ONNX conventions, the getter function is indexed from `0` in every axis. The order of parameters is the same as the order of respective dimensions in `shape`.
+The passed tables implement 'tensors': they should have a `shape` table (an array of integers indexed from `1` to `#shape`) and an element getter function, `get`, which takes `#shape` parameters. The getter function is indexed from `0` in every axis and the order of parameters is the same as the order of respective dimensions in `shape`.
 
 The example code assumes that `xs` is of shape `N` and `ys` of `N x 2`. It computes the dot product `d` of `xs[:]` and `ys[0,:] + ys[1,:]`, and returns a tensor of shape `3` and elements `(0, d, 2*d)`.
 
 ## Why Lua
 
-Because it's easy to embed and should be reasonably 'efficient', though I think I didn't pick the best interface. The function calls, both to the C closure for input `get` and later the Lua function to outputted `get`, seem to be the main overhead.
+Because it's easy to embed and should be reasonably efficient.
 
-Also, an embedded Python already existed and seemed to be really hard to get right, so maybe a Lua approach is more complete.
+> On the topic of efficiency, I don't think I picked the best interface. The function calls seem to be the main overhead - both to the C closure for input `get` and later the Lua function to output `get`.
+
+Also, an embedded Python operator ([PyOp](https://github.com/microsoft/onnxruntime-extensions/tree/main/pyop)) already existed and seemed to be really hard to get right. There were plenty of issues with runtime handling and with the specifics of how it was implemented. As such, maybe a Lua approach is easier to get fully right.
+
+I tried to handle *most* errors, but probably missed wrong type accesses C-side and so on (but those fail graciously in Lua).
 
 ## Building from source
 
