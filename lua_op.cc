@@ -11,6 +11,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
   // Construct Lua state
   auto L = luaL_newstate();
   luaL_openlibs(L);
+  #define bail(__msg) do { lua_close(L); throw std::runtime_error(__msg); } while(0)
 
   // Define the Lua compute function and check for possible errors or lack of return.
   if(luaL_dostring(L, code_.data()) != LUA_OK) {
@@ -115,7 +116,9 @@ void LuaKernel::Compute(OrtKernelContext* context) {
   for(size_t k = OP_IO_SLOTS; k --> 0; lua_pop(L, 1)) {
     if(lua_isnil(L, -1)) {
       std::vector<int64_t> shape = {};
-      ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
+      if(ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size())) {
+        throw std::runtime_error("Output " + std::to_string(k) + " was nil, but it has a slot and would be missing.");
+      }
       continue;
     }
     if(!lua_istable(L, -1)) {
@@ -140,11 +143,36 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     if(lua_pushstring(L, "get"); lua_gettable(L, -2) != LUA_TFUNCTION) {
       throw std::runtime_error("The returned tensor-table does not have a function 'get' field.");
     }
+    lua_pop(L, 1);
+
     OrtValue* value = ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
     if(!value) {
       throw std::runtime_error("Output " + std::to_string(k) + " was not nil, but it has no slot and would be implicitly ignored.");
     }
     double* out = ort_.GetTensorMutableData<double>(value);
 
+    size_t length = 1;
+    for(auto dim : shape)
+      length *= dim > 0 ? dim : 0;
+    const size_t rank = shape.size();
+
+    std::vector<size_t> index(rank);
+    for(size_t i = 0; i < length; i++) {
+      for(size_t d = rank, j = i; d --> 0; ) {
+        index[d] = j % shape[d];
+        j /= shape[d];
+      }
+      lua_pushstring(L, "get");
+      lua_gettable(L, -2);
+      for(size_t d = 0; d < rank; d++)
+        lua_pushinteger(L, index[d]);
+      if(lua_pcall(L, rank, 1, 0) != LUA_OK) {
+        std::string message(lua_tostring(L, -1));
+        throw std::runtime_error(message);
+      }
+      *out = lua_tonumber(L, -1);
+      lua_pop(L, 1);
+    }
   }
+  lua_close(L);
 }
