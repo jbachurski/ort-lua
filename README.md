@@ -30,7 +30,9 @@ The example code assumes that `xs` is of shape `N` and `ys` of `N x 2`. It compu
 
 ## Why Lua
 
-Because it's small to compile and should be reasonably 'efficient', though I think I didn't pick the best interface. The function calls, both to the C closure for input `get` and later the Lua function to outputted `get`, seem to be the main overhead.
+Because it's easy to embed and should be reasonably 'efficient', though I think I didn't pick the best interface. The function calls, both to the C closure for input `get` and later the Lua function to outputted `get`, seem to be the main overhead.
+
+Also, an embedded Python already existed and seemed to be really hard to get right, so maybe a Lua approach is more complete.
 
 ## Building from source
 
