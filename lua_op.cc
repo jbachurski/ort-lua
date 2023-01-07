@@ -111,7 +111,6 @@ void LuaKernel::Compute(OrtKernelContext* context) {
   }
 
   // Access the result as number
-  // TODO: Non-scalar output.
   // TODO: Non-number output.
   for(size_t k = OP_IO_SLOTS; k --> 0; lua_pop(L, 1)) {
     if(lua_isnil(L, -1)) {
