@@ -22,16 +22,20 @@ struct LuaState
   }
 };
 
+#define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
+
 template<typename T>
 void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* data) {
     size_t size = 1;
     for(auto d : shape) size *= d;
     lua_createtable(L, 4, 0);
 
+    // Store the pointer to the data (though not really accessible from Lua)
     lua_pushstring(L, "ptr");
     lua_pushlightuserdata(L, (void*)data);
     lua_settable(L, -3);
 
+    // Store the shape as an array table -  {1: shape[0], 2: shape[1], ...}
     lua_pushstring(L, "shape");
     lua_createtable(L, shape.size(), 0);
     for(size_t i = 0; i < shape.size(); i++) {
@@ -41,6 +45,7 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
     }
     lua_settable(L, -3);
 
+    // Set up the element getter as a closure with access to data, size and shape
     lua_pushstring(L, "get");
     lua_pushlightuserdata(L, (void*)data);
     lua_pushinteger(L, size);
@@ -52,6 +57,7 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
       if (lua_gettop(L1) != shape.size()) {
         return luaL_error(L1, "Tensor get: expected number of arguments to be equal to rank.");
       }
+      // Get the row-major index
       size_t index = 0;
       for(size_t i = 0; i < shape.size(); i++) {
         index *= shape[i];
@@ -61,10 +67,11 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
         return luaL_error(L1, "Tensor get: index out of bounds.");
       }
       lua_pushnumber(L1, data[index]);
-      return 1;
+      return 1; // Number of results
     }, 3);
     lua_settable(L, -3);
 
+    // Alternative getter for direct row-major access
     lua_pushstring(L, "memget");
     lua_pushlightuserdata(L, (void*)data);
     lua_pushinteger(L, size);
@@ -82,13 +89,12 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
     lua_settable(L, -3);
 }
 
-#define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
-
 template<typename T, typename OutputCallback>
 void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
     if(lua_pushstring(L, "shape"); lua_gettable(L, -2) != LUA_TTABLE) {
       bail("The returned tensor-table does not have an (array) table 'shape' field.");
     }
+    // Access the table by iterating, expecting {1: shape[0], 2: shape[1], ..., shape.size(): shape.back()}
     std::vector<int64_t> shape;
     lua_pushnil(L);
     while(lua_next(L, -2)) {
@@ -101,10 +107,10 @@ void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
     }
     lua_pop(L, 1);
 
+    // Access the element function and put it on the top of the stack
     if(lua_pushstring(L, "get"); lua_gettable(L, -2) != LUA_TFUNCTION) {
       bail("The returned tensor-table does not have a function 'get' field.");
     }
-    lua_pop(L, 1);
 
     size_t length = 1;
     for(auto dim : shape)
@@ -118,18 +124,22 @@ void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
         index[d] = j % shape[d];
         j /= shape[d];
       }
-      lua_pushstring(L, "get");
-      lua_gettable(L, -2);
+      // The stack has the getter, copy it so we retain it after pcall
+      lua_pushvalue(L, -1);
       for(size_t d = 0; d < rank; d++)
         lua_pushinteger(L, index[d]);
+      // The stack is the getter twice and then the 'rank' x dimension indices
       if(lua_pcall(L, rank, 1, 0) != LUA_OK) {
         std::string message(lua_tostring(L, -1));
         bail(message);
       }
+      // Stack is now just the resulting element at 'index', take and pop it
       static_assert(std::is_same<T, double>::value, "TODO: Support popping tensors of different datatypes than double.");
       out[i] = lua_tonumber(L, -1);
       lua_pop(L, 1);
     }
+    // Pop the getter from the stack
+    lua_pop(L, 1);
 }
 
 void LuaKernel::Compute(OrtKernelContext* context) {
@@ -148,13 +158,13 @@ void LuaKernel::Compute(OrtKernelContext* context) {
   if(!lua_isfunction(L, -1)) {
     bail("Lua code must return a function to be called with operator inputs, but a different type was found.");
   }
-  // Bottom of stack is now the compute function
+  // Stack: just compute function
 
   lua_checkstack(L, 2 * OP_IO_SLOTS);
   // Parse input data and place on Lua stack as tables
-  // TODO: Non-number input.
   std::vector<int64_t> shapes[OP_IO_SLOTS];
   for(size_t k = 0; k < OP_IO_SLOTS; k++) {
+    // Push all the input tensor tables in sequential order (if the tensors exist)
     const OrtValue* value = ort_.KernelContext_GetInput(context, k);
     if(value == nullptr) {
       lua_pushnil(L);
@@ -167,16 +177,17 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     const double* data = reinterpret_cast<const double*>(ort_.GetTensorData<double>(value));
     push_tensor_table(L, shape, data);
   }
+  // Stack: compute function, then OP_IO_SLOTS x tensor tables (or nil for missing inputs)
 
   // Execute function with arguments on the stack same as in operator input order, check error
   if(lua_pcall(L, OP_IO_SLOTS, OP_IO_SLOTS, 0) != LUA_OK) {
     std::string message(lua_tostring(L, -1));
     bail(message);
   }
+  // Stack: OP_IO_SLOTS x tensor tables (or nil for missing outputs)
 
-  // Access the result as number
-  // TODO: Non-number output.
   for(size_t k = OP_IO_SLOTS; k --> 0; lua_pop(L, 1)) {
+    // Pop output tensors in reverse order (if they exist)
     if(lua_isnil(L, -1)) {
       std::vector<int64_t> shape = {};
       if(ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size())) {
