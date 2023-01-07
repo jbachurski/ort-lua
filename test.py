@@ -13,7 +13,9 @@ function run(xs, ys)
     for i = 0, xs.shape[1] - 1 do
         x = x + xs.get(i) * (ys.get(0, i) + ys.get(1, i))
     end
-    return x, -x
+    return {
+        shape={1}
+    }
 end
 return run
 """
@@ -54,16 +56,19 @@ print(session.run(None, {
 xn = numpy.random.randn(10**6)
 yn = numpy.random.randn(2, 10**6)
 start = time.time()
-print(session.run(None, {
+ret = session.run(None, {
     'x': xn,
     'y': yn
-}))
+})
+print(ret)
 print(time.time() - start)
 start = time.time()
-_ = xn * (yn[0] + yn[1])
+ret = (xn * (yn[0] + yn[1])).sum()
+print(ret)
 print(time.time() - start)
 start = time.time()
-s = 0
+ret = 0
 for i in range(len(xn)):
-    s += xn[i] * (yn[0,i] + yn[1,i])
+    ret += xn[i] * (yn[0,i] + yn[1,i])
+print(ret)
 print(time.time() - start)
