@@ -20,7 +20,11 @@ function run(xs, ys)
         get=function (_) return -x end
     }, {
         shape={#zs},
-        get=function (i) return zs[i+1] end
+        get=function (i)
+            print(i+1)
+            print(zs[i+1])
+            return zs[i+1]
+        end
     }
 end
 return run

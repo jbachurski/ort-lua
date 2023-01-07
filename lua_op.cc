@@ -170,7 +170,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
         std::string message(lua_tostring(L, -1));
         bail(message);
       }
-      *out = lua_tonumber(L, -1);
+      out[i] = lua_tonumber(L, -1);
       lua_pop(L, 1);
     }
   }
