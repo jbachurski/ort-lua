@@ -7,18 +7,18 @@
 
 struct LuaState
 {
-  lua_State *state;
+  lua_State *L;
 
-  LuaState() : state(luaL_newstate()) {
-    luaL_openlibs(state);
+  LuaState() : L(luaL_newstate()) {
+    luaL_openlibs(L);
   }
 
   ~LuaState() {
-    lua_close(state);
+    lua_close(L);
   }
 
   operator lua_State*() {
-    return state;
+    return L;
   }
 };
 
