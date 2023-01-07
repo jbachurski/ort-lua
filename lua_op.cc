@@ -138,9 +138,4 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     double* out = ort_.GetTensorMutableData<double>(value);
     *out = 0;
   }
-  std::cout << std::endl;
-  auto result = lua_tonumber(L, -1);
-
-  // Create ORT output value
-
 }
