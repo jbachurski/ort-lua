@@ -22,6 +22,64 @@ struct LuaState
   }
 };
 
+void push_lua_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const double* data)
+{
+    size_t size = 1;
+    for(auto d : shape) size *= d;
+    lua_createtable(L, 4, 0);
+
+    lua_pushstring(L, "ptr");
+    lua_pushlightuserdata(L, (void*)data);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "shape");
+    lua_createtable(L, shape.size(), 0);
+    for(size_t i = 0; i < shape.size(); i++) {
+      lua_pushinteger(L, i + 1);
+      lua_pushinteger(L, shape[i]);
+      lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "get");
+    lua_pushlightuserdata(L, (void*)data);
+    lua_pushinteger(L, size);
+    lua_pushlightuserdata(L, (void*)&shape);
+    lua_pushcclosure(L, [](lua_State *L1) {
+      const double* data = reinterpret_cast<const double*>(lua_touserdata(L1, lua_upvalueindex(1)));
+      size_t size = lua_tonumber(L1, lua_upvalueindex(2));
+      std::vector<int64_t>& shape = *reinterpret_cast<std::vector<int64_t>*>(lua_touserdata(L1, lua_upvalueindex(3)));
+      if (lua_gettop(L1) != shape.size()) {
+        return luaL_error(L1, "Tensor get: expected number of arguments to be equal to rank.");
+      }
+      size_t index = 0;
+      for(size_t i = 0; i < shape.size(); i++) {
+        index *= shape[i];
+        index += luaL_checkinteger(L1, 1 + i);
+      }
+      if(index >= size) {
+        return luaL_error(L1, "Tensor get: index out of bounds.");
+      }
+      lua_pushnumber(L1, data[index]);
+      return 1;
+    }, 3);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "memget");
+    lua_pushlightuserdata(L, (void*)data);
+    lua_pushinteger(L, size);
+    lua_pushcclosure(L, [](lua_State *L1) {
+      const double* data = reinterpret_cast<const double*>(lua_touserdata(L1, lua_upvalueindex(1)));
+      size_t size = lua_tonumber(L1, lua_upvalueindex(2));
+      auto index = luaL_checkinteger(L1, 1);
+      if(index >= size) {
+        return luaL_error(L1, "Tensor get: index out of bounds.");
+      }
+      lua_pushnumber(L1, data[index]);
+      return 1;
+    }, 2);
+    lua_settable(L, -3);
+}
 
 void LuaKernel::Compute(OrtKernelContext* context) {
   static_assert(std::is_same<double, lua_Number>::value, "Assumes that lua_Number is a double-precision float.");
@@ -58,67 +116,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     shape = ort_.GetTensorShape(info);
     ort_.ReleaseTensorTypeAndShapeInfo(info);
     const double* data = reinterpret_cast<const double*>(ort_.GetTensorData<double>(value));
-
-    size_t size = 1;
-    for(auto d : shape) size *= d;
-
-    lua_createtable(L, 4, 0); {
-      lua_pushstring(L, "index");
-      lua_pushnumber(L, k);
-      lua_settable(L, -3);
-
-      lua_pushstring(L, "ptr");
-      lua_pushlightuserdata(L, (void*)data);
-      lua_settable(L, -3);
-
-      lua_pushstring(L, "shape");
-      lua_createtable(L, shape.size(), 0);
-      for(size_t i = 0; i < shape.size(); i++) {
-        lua_pushnumber(L, i + 1);
-        lua_pushnumber(L, shape[i]);
-        lua_settable(L, -3);
-      }
-      lua_settable(L, -3);
-
-      lua_pushstring(L, "get");
-      lua_pushlightuserdata(L, (void*)data);
-      lua_pushinteger(L, size);
-      lua_pushlightuserdata(L, (void*)&shape);
-      lua_pushcclosure(L, [](lua_State *L1) {
-        double* data = reinterpret_cast<double*>(lua_touserdata(L1, lua_upvalueindex(1)));
-        size_t size = lua_tonumber(L1, lua_upvalueindex(2));
-        std::vector<int64_t>& shape = *reinterpret_cast<std::vector<int64_t>*>(lua_touserdata(L1, lua_upvalueindex(3)));
-        if (lua_gettop(L1) != shape.size()) {
-          return luaL_error(L1, "Tensor get: expected number of arguments to be equal to rank.");
-        }
-        size_t index = 0;
-        for(size_t i = 0; i < shape.size(); i++) {
-          index *= shape[i];
-          index += luaL_checkinteger(L1, 1 + i);
-        }
-        if(index >= size) {
-          return luaL_error(L1, "Tensor get: index out of bounds.");
-        }
-        lua_pushnumber(L1, data[index]);
-        return 1;
-      }, 3);
-      lua_settable(L, -3);
-
-      lua_pushstring(L, "memget");
-      lua_pushlightuserdata(L, (void*)data);
-      lua_pushinteger(L, size);
-      lua_pushcclosure(L, [](lua_State *L1) {
-        double* data = reinterpret_cast<double*>(lua_touserdata(L1, lua_upvalueindex(1)));
-        size_t size = lua_tonumber(L1, lua_upvalueindex(2));
-        auto index = luaL_checkinteger(L1, 1);
-        if(index >= size) {
-          return luaL_error(L1, "Tensor get: index out of bounds.");
-        }
-        lua_pushnumber(L1, data[index]);
-        return 1;
-      }, 2);
-      lua_settable(L, -3);
-    }
+    push_lua_tensor_table(L, shape, data);
   }
 
   // Execute function with arguments on the stack same as in operator input order, check error
