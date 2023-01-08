@@ -24,6 +24,19 @@ struct LuaState
 };
 
 
+template<typename T> const T* get_tensor_data(Ort::CustomOpApi&, const OrtValue*);
+
+template<> const double* get_tensor_data<double>(Ort::CustomOpApi& ort, const OrtValue* value) {
+  return ort.GetTensorData<double>(value);
+}
+
+template<typename T> void set_tensor_data(Ort::CustomOpApi&, OrtValue*, const std::vector<T>&);
+
+template<> void set_tensor_data<double>(Ort::CustomOpApi& ort, OrtValue* value, const std::vector<double>& data) {
+  copy(data.begin(), data.end(), ort.GetTensorMutableData<double>(value));
+}
+
+
 template<typename T> void push_tensor_element(lua_State*, const T&);
 
 template<> void push_tensor_element<double>(lua_State *L1, const double& value) {
@@ -80,24 +93,28 @@ template<> double pop_tensor_element<double>(lua_State *L1, int i) {
   return lua_tonumber(L1, i);
 }
 
-template<typename T, typename OutputCallback>
-void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
-    if(lua_pushstring(L, "shape"); lua_gettable(L, -2) != LUA_TTABLE) {
-      bail("The returned tensor-table does not have an (array) table 'shape' field.");
+std::vector<int64_t> top_tensor_table_shape(LuaState& L) {
+  // Access the shape table
+  if(lua_pushstring(L, "shape"); lua_gettable(L, -2) != LUA_TTABLE) {
+    bail("The returned tensor-table does not have an (array) table 'shape' field.");
+  }
+  // Access the table by iterating, expecting {1: shape[0], 2: shape[1], ..., shape.size(): shape.back()}
+  std::vector<int64_t> shape;
+  lua_pushnil(L);
+  while(lua_next(L, -2)) {
+    lua_pushvalue(L, -2);
+    if(lua_tointeger(L, -1) != 1 + shape.size()) {
+      bail("The returned shape is not an array table.");
     }
-    // Access the table by iterating, expecting {1: shape[0], 2: shape[1], ..., shape.size(): shape.back()}
-    std::vector<int64_t> shape;
-    lua_pushnil(L);
-    while(lua_next(L, -2)) {
-      lua_pushvalue(L, -2);
-      if(lua_tointeger(L, -1) != 1 + shape.size()) {
-        bail("The returned shape is not an array table.");
-      }
-      shape.push_back(lua_tointeger(L, -2));
-      lua_pop(L, 2);
-    }
-    lua_pop(L, 1);
+    shape.push_back(lua_tointeger(L, -2));
+    lua_pop(L, 2);
+  }
+  lua_pop(L, 1);
+  return shape;
+}
 
+template<typename T>
+std::vector<T> pop_tensor_table(LuaState& L, const std::vector<int64_t>& shape) {
     // Access the element function and put it on the top of the stack
     if(lua_pushstring(L, "get"); lua_gettable(L, -2) != LUA_TFUNCTION) {
       bail("The returned tensor-table does not have a function 'get' field.");
@@ -108,7 +125,7 @@ void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
       length *= dim > 0 ? dim : 0;
     const size_t rank = shape.size();
 
-    auto out = GetOutput(shape);
+    std::vector<T> data(length);
     std::vector<size_t> index(rank);
     for(size_t i = 0; i < length; i++) {
       for(size_t d = rank, j = i; d --> 0; ) {
@@ -125,11 +142,13 @@ void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
         bail(message);
       }
       // Stack is now just the getter and resulting element at 'index', take and pop it
-      out[i] = pop_tensor_element<T>(L, -1);
+      data[i] = pop_tensor_element<T>(L, -1);
       lua_pop(L, 1);
     }
     // Pop the getter from the stack
     lua_pop(L, 1);
+
+    return data;
 }
 
 void LuaKernel::Compute(OrtKernelContext* context) {
@@ -164,8 +183,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     OrtTensorTypeAndShapeInfo* info = ort_.GetTensorTypeAndShape(value);
     shape = ort_.GetTensorShape(info);
     ort_.ReleaseTensorTypeAndShapeInfo(info);
-    const double* data = reinterpret_cast<const double*>(ort_.GetTensorData<double>(value));
-    push_tensor_table(L, shape, data);
+    push_tensor_table(L, shape, get_tensor_data<double>(ort_, value));
   }
   // Stack: compute function, then OP_IO_SLOTS x tensor tables (or nil for missing inputs)
 
@@ -189,13 +207,13 @@ void LuaKernel::Compute(OrtKernelContext* context) {
       bail("The returned value must be a (tensor) table.");
     }
 
-    pop_tensor_table<double>(L, [&](const std::vector<int64_t>& shape) {
-      OrtValue* value = ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
-      if(!value) {
-        bail("Output " + std::to_string(k) + " was not nil, but it has no slot and would be implicitly ignored.");
-      }
-      return ort_.GetTensorMutableData<double>(value);
-    });
+    auto shape = top_tensor_table_shape(L);
+    OrtValue* value = ort_.KernelContext_GetOutput(context, k, shape.data(), shape.size());
+    if(!value) {
+      bail("Output " + std::to_string(k) + " was not nil, but it has no slot and would be implicitly ignored.");
+    }
+    auto data = pop_tensor_table<double>(L, shape);
+    set_tensor_data(ort_, value, data);
   }
 }
 
