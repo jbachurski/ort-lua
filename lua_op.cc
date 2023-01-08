@@ -3,6 +3,7 @@
 #include <onnxruntime_cxx_api.h>
 #include <lua.hpp>
 #include "lua_op.h"
+#define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
 
 
 struct LuaState
@@ -22,7 +23,12 @@ struct LuaState
   }
 };
 
-#define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
+
+template<typename T> void push_tensor_element(lua_State*, const T&);
+
+template<> void push_tensor_element<double>(lua_State *L1, const double& value) {
+  lua_pushnumber(L1, value);
+}
 
 template<typename T>
 void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* data) {
@@ -61,10 +67,17 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
       if(index >= size) {
         return luaL_error(L1, "Tensor get: index out of bounds.");
       }
-      lua_pushnumber(L1, data[index]);
+      push_tensor_element<T>(L1, data[index]);
       return 1; // Number of results
     }, 3);
     lua_settable(L, -3);
+}
+
+
+template<typename T> T pop_tensor_element(lua_State*, int);
+
+template<> double pop_tensor_element<double>(lua_State *L1, int i) {
+  return lua_tonumber(L1, i);
 }
 
 template<typename T, typename OutputCallback>
@@ -112,8 +125,7 @@ void pop_tensor_table(LuaState& L, OutputCallback GetOutput) {
         bail(message);
       }
       // Stack is now just the getter and resulting element at 'index', take and pop it
-      static_assert(std::is_same<T, double>::value, "TODO: Support popping tensors of different datatypes than double.");
-      out[i] = lua_tonumber(L, -1);
+      out[i] = pop_tensor_element<T>(L, -1);
       lua_pop(L, 1);
     }
     // Pop the getter from the stack
