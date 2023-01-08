@@ -24,10 +24,15 @@ struct LuaState
 };
 
 
-template<typename T> const T* get_tensor_data(Ort::CustomOpApi&, const OrtValue*);
-
-template<> const double* get_tensor_data<double>(Ort::CustomOpApi& ort, const OrtValue* value) {
-  return ort.GetTensorData<double>(value);
+template<typename T> std::vector<T> get_tensor_data(Ort::CustomOpApi&, const OrtValue*);
+template<> std::vector<double> get_tensor_data<double>(Ort::CustomOpApi& ort, const OrtValue* value) {
+  OrtTensorTypeAndShapeInfo* info = ort.GetTensorTypeAndShape(value);
+  const size_t count = ort.GetTensorShapeElementCount(info);
+  ort.ReleaseTensorTypeAndShapeInfo(info);
+  std::vector<double> target(count);
+  auto data = ort.GetTensorData<double>(value);
+  copy(data, data + count, target.begin());
+  return target;
 }
 
 template<typename T> void set_tensor_data(Ort::CustomOpApi&, OrtValue*, const std::vector<T>&);
@@ -44,7 +49,7 @@ template<> void push_tensor_element<double>(lua_State *L1, const double& value) 
 }
 
 template<typename T>
-void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* data) {
+void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const std::vector<T>& data) {
     size_t size = 1;
     for(auto d : shape) size *= d;
     lua_createtable(L, 2, 0);
@@ -61,13 +66,11 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
 
     // Set up the element getter as a closure with access to data, size and shape
     lua_pushstring(L, "get");
-    lua_pushlightuserdata(L, (void*)data);
-    lua_pushinteger(L, size);
+    lua_pushlightuserdata(L, (void*)&data);
     lua_pushlightuserdata(L, (void*)&shape);
     lua_pushcclosure(L, [](lua_State *L1) {
-      const T* data = reinterpret_cast<const T*>(lua_touserdata(L1, lua_upvalueindex(1)));
-      size_t size = lua_tonumber(L1, lua_upvalueindex(2));
-      std::vector<int64_t>& shape = *reinterpret_cast<std::vector<int64_t>*>(lua_touserdata(L1, lua_upvalueindex(3)));
+      const std::vector<T>& data = *reinterpret_cast<const std::vector<T>*>(lua_touserdata(L1, lua_upvalueindex(1)));
+      const std::vector<int64_t>& shape = *reinterpret_cast<const std::vector<int64_t>*>(lua_touserdata(L1, lua_upvalueindex(2)));
       if (lua_gettop(L1) != shape.size()) {
         return luaL_error(L1, "Tensor get: expected number of arguments to be equal to rank.");
       }
@@ -77,12 +80,12 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
         index *= shape[i];
         index += luaL_checkinteger(L1, 1 + i);
       }
-      if(index >= size) {
+      if(index >= data.size()) {
         return luaL_error(L1, "Tensor get: index out of bounds.");
       }
       push_tensor_element<T>(L1, data[index]);
       return 1; // Number of results
-    }, 3);
+    }, 2);
     lua_settable(L, -3);
 }
 
@@ -171,6 +174,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
 
   lua_checkstack(L, 2 * OP_IO_SLOTS);
   // Parse input data and place on Lua stack as tables
+  std::vector<double> input_data[OP_IO_SLOTS];
   std::vector<int64_t> shapes[OP_IO_SLOTS];
   for(size_t k = 0; k < OP_IO_SLOTS; k++) {
     // Push all the input tensor tables in sequential order (if the tensors exist)
@@ -183,7 +187,7 @@ void LuaKernel::Compute(OrtKernelContext* context) {
     OrtTensorTypeAndShapeInfo* info = ort_.GetTensorTypeAndShape(value);
     shape = ort_.GetTensorShape(info);
     ort_.ReleaseTensorTypeAndShapeInfo(info);
-    push_tensor_table(L, shape, get_tensor_data<double>(ort_, value));
+    push_tensor_table(L, shape, input_data[k] = get_tensor_data<double>(ort_, value));
   }
   // Stack: compute function, then OP_IO_SLOTS x tensor tables (or nil for missing inputs)
 
