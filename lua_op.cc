@@ -28,12 +28,7 @@ template<typename T>
 void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* data) {
     size_t size = 1;
     for(auto d : shape) size *= d;
-    lua_createtable(L, 4, 0);
-
-    // Store the pointer to the data (though not really accessible from Lua)
-    lua_pushstring(L, "ptr");
-    lua_pushlightuserdata(L, (void*)data);
-    lua_settable(L, -3);
+    lua_createtable(L, 2, 0);
 
     // Store the shape as an array table -  {1: shape[0], 2: shape[1], ...}
     lua_pushstring(L, "shape");
@@ -69,23 +64,6 @@ void push_tensor_table(LuaState& L, const std::vector<int64_t>& shape, const T* 
       lua_pushnumber(L1, data[index]);
       return 1; // Number of results
     }, 3);
-    lua_settable(L, -3);
-
-    // Alternative getter for direct row-major access
-    lua_pushstring(L, "memget");
-    lua_pushlightuserdata(L, (void*)data);
-    lua_pushinteger(L, size);
-    lua_pushcclosure(L, [](lua_State *L1) {
-      const T* data = reinterpret_cast<const T*>(lua_touserdata(L1, lua_upvalueindex(1)));
-      size_t size = lua_tonumber(L1, lua_upvalueindex(2));
-      auto index = luaL_checkinteger(L1, 1);
-      if(index >= size) {
-        return luaL_error(L1, "Tensor get: index out of bounds.");
-      }
-      static_assert(std::is_same<T, double>::value, "TODO: Support pushing tensors of different datatypes than double.");
-      lua_pushnumber(L1, data[index]);
-      return 1;
-    }, 2);
     lua_settable(L, -3);
 }
 
