@@ -1,7 +1,7 @@
 #include <mutex>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
-#include "lua_op.h"
+#include "lua_op.hpp"
 
 
 struct OrtCustomOpDomainDeleter {
@@ -28,18 +28,18 @@ static void AddOrtCustomOpDomainToContainer(OrtCustomOpDomain* domain, const Ort
 static const char* c_OpDomain = "lang.lua";
 static const LuaOp c_LuaOp;
 
-extern "C" OrtStatus* ORT_API_CALL RegisterCustomOps(OrtSessionOptions* options, const OrtApiBase* api) { 
-  OrtCustomOpDomain* domain = nullptr; 
-  const OrtApi* ortApi = api->GetApi(ORT_API_VERSION); 
+extern "C" OrtStatus* ORT_API_CALL RegisterCustomOps(OrtSessionOptions* options, const OrtApiBase* api) {
+  OrtCustomOpDomain* domain = nullptr;
+  const OrtApi* ortApi = api->GetApi(ORT_API_VERSION);
 
-  if (auto status = ortApi->CreateCustomOpDomain(c_OpDomain, &domain)) { 
-    return status; 
-  } 
+  if (auto status = ortApi->CreateCustomOpDomain(c_OpDomain, &domain)) {
+    return status;
+  }
 
   AddOrtCustomOpDomainToContainer(domain, ortApi);
 
-  if (auto status = ortApi->CustomOpDomain_Add(domain, &c_LuaOp)) { 
-    return status; 
+  if (auto status = ortApi->CustomOpDomain_Add(domain, &c_LuaOp)) {
+    return status;
   }
 
   if (auto status = ortApi->AddCustomOpDomain(options, domain)) {

@@ -2,7 +2,7 @@
 #include <type_traits>
 #include <onnxruntime_cxx_api.h>
 #include <lua.hpp>
-#include "lua_op.h"
+#include "lua_op.hpp"
 #define bail(__msg) do { throw std::runtime_error(__msg); } while(0)
 
 
