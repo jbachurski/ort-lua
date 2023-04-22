@@ -46,5 +46,5 @@ find_library(LUA_LIBRARY lua HINTS ${LUA_DIR}/install/lib/)
 find_library(ONNXRUNTIME_LIBRARY onnxruntime HINTS ${ONNXRUNTIME_DIR}/lib/)
 
 # Set up target
-add_library(langops SHARED lang_ops.cpp lang_ops.hpp lua_op.cpp lua_op.hpp)
+add_library(langops SHARED src/lang_ops.cpp)
 target_link_libraries(langops PUBLIC ${LUA_LIBRARY})
