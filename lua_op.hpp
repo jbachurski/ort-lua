@@ -1,5 +1,5 @@
 #pragma once
-#include <onnxruntime_cxx_api.h>
+#include "onnxruntime_api.hpp"
 
 constexpr size_t OP_IO_SLOTS = 16;
 

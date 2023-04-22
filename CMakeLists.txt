@@ -5,7 +5,9 @@ add_definitions(-std=c++17)
 # Configuration
 set(LUA_VERSION 5.4.4)
 set(ONNXRUNTIME_VERSION 1.13.1)
-set(ONNXRUNTIME_ARCH linux-x64)
+
+set(ONNXRUNTIME_INCLUDE_URL
+    https://raw.githubusercontent.com/microsoft/onnxruntime/v${ONNXRUNTIME_VERSION}/include/onnxruntime/core/session)
 
 # Download a Lua release
 set(LUA_SOURCE_URL https://www.lua.org/ftp/lua-${LUA_VERSION}.tar.gz)
@@ -24,18 +26,21 @@ execute_process(COMMAND make local WORKING_DIRECTORY ${LUA_DIR})
 include_directories(${LUA_DIR}/install/include/)
 link_directories(${LUA_DIR}/install/lib/)
 
-# Download an ONNX Runtime release to link against
-set(ONNXRUNTIME_RELEASE_NAME onnxruntime-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION})
-set(ONNXRUNTIME_RELEASE_URL https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/${ONNXRUNTIME_RELEASE_NAME}.tgz)
+# Download ONNX Runtime header files for given version
+set(ONNXRUNTIME_DIR ${CMAKE_BINARY_DIR}/external/onnxruntime)
 file(DOWNLOAD
-    ${ONNXRUNTIME_RELEASE_URL}
-    ${CMAKE_BINARY_DIR}/external/onnxruntime.tgz)
-file(ARCHIVE_EXTRACT INPUT ${CMAKE_BINARY_DIR}/external/onnxruntime.tgz DESTINATION ${CMAKE_BINARY_DIR}/external/)
-set(ONNXRUNTIME_DIR ${CMAKE_BINARY_DIR}/external/${ONNXRUNTIME_RELEASE_NAME})
+    ${ONNXRUNTIME_INCLUDE_URL}/onnxruntime_c_api.h
+    ${ONNXRUNTIME_DIR}/include/onnxruntime_c_api.h)
+file(DOWNLOAD
+    ${ONNXRUNTIME_INCLUDE_URL}/onnxruntime_cxx_inline.h
+    ${ONNXRUNTIME_DIR}/include/onnxruntime_cxx_inline.h)
+file(DOWNLOAD
+    ${ONNXRUNTIME_INCLUDE_URL}/onnxruntime_cxx_api.h
+    ${ONNXRUNTIME_DIR}/include/onnxruntime_cxx_api.h)
+
 
 # Add header files & libraries
 include_directories(${ONNXRUNTIME_DIR}/include/)
-link_directories(${ONNXRUNTIME_DIR}/lib/)
 
 # Find libraries we're linking against
 find_library(LUA_LIBRARY lua HINTS ${LUA_DIR}/install/lib/)
@@ -43,4 +48,4 @@ find_library(ONNXRUNTIME_LIBRARY onnxruntime HINTS ${ONNXRUNTIME_DIR}/lib/)
 
 # Set up target
 add_library(langops SHARED lang_ops.cpp lang_ops.hpp lua_op.cpp lua_op.hpp)
-target_link_libraries(langops PUBLIC ${ONNXRUNTIME_LIBRARY} ${LUA_LIBRARY})
+target_link_libraries(langops PUBLIC ${LUA_LIBRARY})

@@ -1,6 +1,6 @@
 #include <mutex>
 #include <memory>
-#include <onnxruntime_cxx_api.h>
+#include "onnxruntime_api.hpp"
 #include "lua_op.hpp"
 
 
