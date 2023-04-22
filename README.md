@@ -40,7 +40,9 @@ I tried to handle *most* errors, but probably missed wrong type accesses C-side 
 
 ## Building from source
 
-You can build the shared library with CMake. It downloads and builds Lua from source, and also downloads an ONNX Runtime binary release.
+**Warning:** ONNX Runtime's `CustomOpApi`, used here, is now deprecated since 1.14 (the library was originally developed at 1.13). Some refactoring is necessary to update it.
+
+You can build the shared library with CMake. It downloads and builds Lua from source, and also downloads the necessary ONNX Runtime headers from GitHub at a configurable version (tag).
 
 Begin by configuring the project, which also grabs the dependencies:
 

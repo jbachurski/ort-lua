@@ -4,7 +4,7 @@ add_definitions(-std=c++17)
 
 # Configuration
 set(LUA_VERSION 5.4.4)
-set(ONNXRUNTIME_VERSION 1.13.1)
+set(ONNXRUNTIME_VERSION 1.14.1)
 
 # Download a Lua release
 set(LUA_SOURCE_URL https://www.lua.org/ftp/lua-${LUA_VERSION}.tar.gz)
