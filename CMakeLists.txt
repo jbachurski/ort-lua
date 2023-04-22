@@ -6,9 +6,6 @@ add_definitions(-std=c++17)
 set(LUA_VERSION 5.4.4)
 set(ONNXRUNTIME_VERSION 1.13.1)
 
-set(ONNXRUNTIME_INCLUDE_URL
-    https://raw.githubusercontent.com/microsoft/onnxruntime/v${ONNXRUNTIME_VERSION}/include/onnxruntime/core/session)
-
 # Download a Lua release
 set(LUA_SOURCE_URL https://www.lua.org/ftp/lua-${LUA_VERSION}.tar.gz)
 file(DOWNLOAD
@@ -28,6 +25,9 @@ link_directories(${LUA_DIR}/install/lib/)
 
 # Download ONNX Runtime header files for given version
 set(ONNXRUNTIME_DIR ${CMAKE_BINARY_DIR}/external/onnxruntime)
+set(ONNXRUNTIME_INCLUDE_URL
+    https://raw.githubusercontent.com/microsoft/onnxruntime/v${ONNXRUNTIME_VERSION}/include/onnxruntime/core/session)
+
 file(DOWNLOAD
     ${ONNXRUNTIME_INCLUDE_URL}/onnxruntime_c_api.h
     ${ONNXRUNTIME_DIR}/include/onnxruntime_c_api.h)
@@ -37,7 +37,6 @@ file(DOWNLOAD
 file(DOWNLOAD
     ${ONNXRUNTIME_INCLUDE_URL}/onnxruntime_cxx_api.h
     ${ONNXRUNTIME_DIR}/include/onnxruntime_cxx_api.h)
-
 
 # Add header files & libraries
 include_directories(${ONNXRUNTIME_DIR}/include/)
